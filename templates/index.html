@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Mesajlaşma Uygulaması</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <style>
+    body { background: #374151; margin:0; font-family: 'Segoe UI',Arial,sans-serif;}
+    .container { display: flex; height: 98vh; max-width: 900px; margin: 24px auto; background: #222; border-radius: 14px; box-shadow: 0 4px 28px #0006; overflow: hidden;}
+    .sidebar { width: 220px; background: #1f2937; color: #fff; display: flex; flex-direction: column; }
+    .sidebar h2 { text-align:center; margin:16px 0 8px 0; font-size:1.17rem; letter-spacing:.5px;}
+    .sidebar .user { background: #2d3748; margin:8px 12px 14px 12px; padding:8px; border-radius:6px; text-align:center; font-weight:600;}
+    .sidebar .search { margin: 6px 12px; }
+    .sidebar input { width: 100%; padding:8px; border-radius:4px; border:none; }
+    .sidebar .list { flex:1; overflow-y:auto; }
+    .chat-user { padding:9px 16px; cursor:pointer; border-bottom:1px solid #232c3c; transition:.12s; }
+    .chat-user.active, .chat-user:hover { background:#18b3bb; color:#fff; }
+    .sidebar .new-btn { margin: 10px 12px 14px 12px; background:#0891b2; color:#fff; border:none; border-radius:5px; padding:9px 0; font-weight:600; cursor:pointer;}
+    .main { flex:1; display: flex; flex-direction: column; background: #f7fafc; }
+    .main .topbar { background:#fff; padding:18px 22px; border-bottom:1px solid #eee; font-weight:600; font-size:1.07rem; }
+    .main .chatbox { flex:1; overflow-y:auto; padding: 20px 16px; background:#e7e7ee;}
+    .msg { margin-bottom: 11px; padding:9px 17px; border-radius:15px; display:inline-block; max-width:62%; }
+    .msg.me { background:#18b3bb; color:#fff; align-self:flex-end; margin-left:35%; text-align:right; }
+    .msg.other { background:#6366f1; color:#fff; align-self:flex-start; margin-right:35%; }
+    .msg .from { font-size:0.9em; opacity:.6;}
+    .main .footer { background:#fff; display:flex; padding:12px 14px; border-radius:0 0 14px 0;}
+    .main input { flex:1; padding:11px 14px; border-radius:18px; border:1.5px solid #bbb; font-size:1.05rem; margin-right:8px;}
+    .main button { padding:8px 22px; border-radius:18px; border:none; background:#0891b2; color:#fff; font-weight:600; font-size:1rem; cursor:pointer;}
+    .main button:hover { background:#06b6d4;}
+    .login-overlay { position:fixed; top:0; left:0; width:100vw; height:100vh; background:#222d 60%; z-index:10; display:flex; align-items:center; justify-content:center;}
+    .login-box { background:#fff; color:#1f2937; padding:38px 34px; border-radius:13px; box-shadow:0 4px 32px #0008; text-align:center;}
+    .login-box input { font-size:1.11rem; padding:11px 12px; width:90%; border-radius:8px; margin:14px 0;}
+    .login-box button { width:94%; background:#0891b2; color:#fff; font-weight:600; border:none; border-radius:7px; padding:11px 0; font-size:1.08rem;}
+    .login-box button:hover { background:#06b6d4;}
+    @media (max-width:700px){ .container { flex-direction:column; min-width:0; width:100vw; margin:0;} .sidebar{ width:100vw; min-height:140px; flex-direction:row;} .main{ min-height:350px;} }
+  </style>
+</head>
+<body>
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <h2>Mesajlaşma Uygulaması</h2>
+    <input type="text" id="loginUser" placeholder="Kullanıcı adınız">
+    <button onclick="registerUser()">Giriş / Kayıt Ol</button>
+    <div id="loginError" style="color:#ef4444;min-height:20px;"></div>
+  </div>
+</div>
+<div class="container" style="display:none;" id="chatApp">
+  <div class="sidebar">
+    <h2>Sohbetler</h2>
+    <div class="user" id="meUser"></div>
+    <button class="new-btn" onclick="showNewChat()">+ Yeni Sohbet</button>
+    <div class="search" id="newChatBox" style="display:none;">
+      <input type="text" id="newChatUser" placeholder="Kullanıcı adı ile ara">
+      <button style="margin-top:7px;width:100%;" onclick="startNewChat()">Başlat</button>
+      <div id="searchError" style="color:#ef4444;font-size:0.99em;"></div>
+    </div>
+    <div class="list" id="chatList"></div>
+  </div>
+  <div class="main">
+    <div class="topbar" id="chatTop">Sohbet seçiniz</div>
+    <div class="chatbox" id="chatBox"></div>
+    <div class="footer" id="footerBox" style="display:none;">
+      <input id="msgInput" type="text" autocomplete="off" placeholder="Mesaj yaz...">
+      <button onclick="sendMsg()">Gönder</button>
+    </div>
+  </div>
+</div>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDqpHD-J8v1sVbfbYGNaYd-7nvS3OcQY_s",
+  authDomain: "mesaj-uygulamasi-a8eb0.firebaseapp.com",
+  databaseURL: "https://mesaj-uygulamasi-a8eb0-default-rtdb.firebaseio.com",
+  projectId: "mesaj-uygulamasi-a8eb0",
+  storageBucket: "mesaj-uygulamasi-a8eb0.firebasestorage.app",
+  messagingSenderId: "837400689014",
+  appId: "1:837400689014:web:42b5317aa80f3ddefc2257",
+  measurementId: "G-XL6HC0TQ4E"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+let myUser = "", activeChat = "", chatListener = null, chatsMap = {};
+
+function registerUser() {
+  const name = document.getElementById('loginUser').value.trim();
+  if (name.length < 2) {
+    document.getElementById('loginError').textContent = "Lütfen en az 2 karakterli bir ad gir.";
+    return;
+  }
+  db.ref("users/" + name).set({username: name});
+  myUser = name;
+  document.getElementById('loginOverlay').style.display = "none";
+  document.getElementById('chatApp').style.display = "";
+  document.getElementById('meUser').textContent = myUser;
+  loadChats();
+}
+
+function showNewChat() {
+  const box = document.getElementById('newChatBox');
+  box.style.display = box.style.display === "none" ? "" : "none";
+  document.getElementById('searchError').textContent = "";
+  document.getElementById('newChatUser').value = "";
+}
+
+function startNewChat() {
+  const other = document.getElementById('newChatUser').value.trim();
+  if (!other || other === myUser) {
+    document.getElementById('searchError').textContent = "Kendinle veya boş isimle sohbet olmaz.";
+    return;
+  }
+  db.ref("users/" + other).once("value").then(snap => {
+    if (!snap.exists()) {
+      document.getElementById('searchError').textContent = "Böyle bir kullanıcı yok.";
+      return;
+    }
+    openChat(other);
+    showNewChat();
+  });
+}
+
+function getChatKey(u1, u2) {
+  return [u1, u2].sort().join("__");
+}
+
+function loadChats() {
+  db.ref("chats").once("value").then(snapshot => {
+    chatsMap = {};
+    if (snapshot.exists()) {
+      snapshot.forEach(child => {
+        const key = child.key;
+        if (key.includes(myUser)) {
+          const names = key.split("__");
+          const other = names[0] === myUser ? names[1] : names[0];
+          chatsMap[other] = key;
+        }
+      });
+    }
+    renderChatList();
+  });
+}
+
+function renderChatList() {
+  const cl = document.getElementById('chatList');
+  cl.innerHTML = "";
+  const users = Object.keys(chatsMap);
+  if (!users.length) {
+    cl.innerHTML = "<div style='padding:20px;color:#eee;'>Sohbetiniz yok.</div>";
+    return;
+  }
+  users.forEach(u => {
+    const div = document.createElement("div");
+    div.textContent = u;
+    div.className = "chat-user" + (activeChat === u ? " active" : "");
+    div.onclick = () => openChat(u);
+    cl.appendChild(div);
+  });
+}
+
+function openChat(other) {
+  if (activeChat === other) return;
+  activeChat = other;
+  document.getElementById('chatTop').textContent = other + " ile sohbet";
+  document.getElementById('footerBox').style.display = "";
+  renderChatList();
+  loadChatMessages();
+}
+
+function loadChatMessages() {
+  if (chatListener) chatListener.off();
+  const key = getChatKey(myUser, activeChat);
+  document.getElementById('chatBox').innerHTML = "";
+  chatListener = db.ref("chats/" + key + "/messages");
+  chatListener.off();
+  chatListener.limitToLast(50).on("child_added", snap => {
+    const d = snap.val();
+    const msgDiv = document.createElement("div");
+    msgDiv.className = "msg " + (d.username === myUser ? "me" : "other");
+    msgDiv.innerHTML = "<span class='from'>" + d.username + "</span><br>" + d.message;
+    document.getElementById('chatBox').appendChild(msgDiv);
+    document.getElementById('chatBox').scrollTop = 99999;
+  });
+}
+
+function sendMsg() {
+  const inp = document.getElementById('msgInput');
+  const msg = inp.value.trim();
+  if (!msg || !activeChat) return;
+  const key = getChatKey(myUser, activeChat);
+  db.ref("chats/" + key + "/messages").push({ username: myUser, message: msg, ts: Date.now() });
+  inp.value = "";
+  inp.focus();
+}
+
+document.getElementById('msgInput').addEventListener('keypress', function(e){
+  if(e.key === 'Enter'){ sendMsg(); }
+});
+
+</script>
+</body>
+</html>
